@@ -9,7 +9,14 @@
 // set so it is as efficient at full throttle as the test boat's (about 39%), which puts her full-throttle rpm in the
 // upper half of Honda's band: 5,870 rpm and 34 kn with the leg trimmed well (a 17 in pitch held her at 5,525 and no
 // faster). About 1,150 kg all up with two aboard and fuel: sellers' claims of about 38 kn will be lighter boats.
-const RIBC = { m: 1150, L: 6.54, B: 2.49, xe: -3.15, gr: 2.14, D: 0.375, P: 0.406, kJ: 1.542, kq0: 0.105, rho: 1025, idle: 700, limit: 6300, Je: 0.24, Alu: 0.04, Al: 4.2, Af: 2.7 };
+const RIBC = { m: 1150, L: 6.54, B: 2.49, xe: -3.15, gr: 2.14, D: 0.375, P: 0.406, kJ: 1.542, kq0: 0.105, rho: 1025, idle: 700, limit: 6300, Je: 0.24, Alu: 0.04, Al: 4.2, Af: 2.7,
+  // hull in sway and yaw: linear lift of the V (N per m/s per m/s), where it acts (m forward of the pivot, at rest and on
+  // the plane), cross-flow drag coefficient on the strips below, linear yaw damping, and the share of the Munk moment
+  yv0: 300, yv1: 400, xl0: 0.2, xl1: -0.2, cd: 0.6, nr0: 150, nr1: 400, munk: 0.5 };
+// the lateral plane in strips, [x forward of the pivot, depth]: at rest she sits by the stern on her deep-V, the leg and
+// the after ends of the tubes in the water and the forefoot barely wet, so most of the grip is aft; on the plane only the
+// after third is wet
+const HULL_ST = [[-3.2, 0.42], [-2.4, 0.4], [-1.6, 0.37], [-0.8, 0.33], [0, 0.28], [0.8, 0.2], [1.6, 0.1]];
 const RIB_RW = [[0, 0], [1, 0.006], [1.59, 0.0336], [2.42, 0.0751], [3.24, 0.133], [4.37, 0.198], [5.4, 0.222], [6.5, 0.205], [7.87, 0.172], [9.98, 0.18], [12.35, 0.167], [14.51, 0.158], [16.41, 0.165], [18.16, 0.188], [19.75, 0.207], [22, 0.25]];
 function ribRW(V) { V = Math.abs(V); for (let i = 1; i < RIB_RW.length; i++) if (V <= RIB_RW[i][0]) { const [a, ra] = RIB_RW[i - 1], [b, rb] = RIB_RW[i]; return ra + (rb - ra) * (V - a) / (b - a); } return 0.25 * (V / 22) ** 2; }
 // 150 hp (112 kW) at 5,500 rpm; torque peaking about 205 Nm round 4,300
@@ -106,9 +113,16 @@ function ribPhys(dt) {
   const CLu = 1.1 * Math.tanh(3 * alpha / 1.1) * (1 - 0.45 * smooth(0.42, 0.8, Math.abs(alpha))), Ylu = -0.5 * C.rho * C.Alu * Ue2 * CLu * (ur >= 0 ? 1 : -0.8);
   Y += Ylu * Math.cos(delta); X -= Math.abs(Ylu * Math.sin(delta)) * 0.25; N += C.xe * Ylu;
   X -= W * ribRW(ur) * trimF * Math.sign(ur) * (ur < 0 ? 2.2 : 1);
-  const Yh = -(140 + 230 * p) * U * vr * (1 - 0.45 * clamp(R.airT[0] * 6, 0, 1)) - 800 * vr * Math.abs(vr);
-  Y += Yh; N += (0.35 - 0.55 * p) * Yh;
-  N += -(260 + 340 * U) * R.r - 3200 * R.r * Math.abs(R.r) - 0.5 * (my - mx) * ur * vr;
+  // the V-bottom as a low-aspect wing: lift against drift, a little forward of the pivot at rest and aft of it planing
+  const Yl = -(C.yv0 + C.yv1 * p) * U * vr * (1 - 0.45 * clamp(R.airT[0] * 6, 0, 1));
+  Y += Yl; N += (C.xl0 + (C.xl1 - C.xl0) * p) * Yl;
+  // cross-flow drag strip by strip, each at its own sideways speed (v + x r): in a turn the stern sweeps out and is
+  // pushed back, which is what stops a deep-V hull yawing once the drive comes off
+  for (const [xs, ds] of HULL_ST) {
+    const wet = 1 - p * smooth(-2.2, -0.6, xs) * 0.9, wS = 0.5 * C.rho * C.cd * ds * 0.8 * wet * (1 - 0.5 * p), vl = vr + xs * R.r, F = -wS * vl * Math.abs(vl);
+    Y += F; N += xs * F;
+  }
+  N += -(C.nr0 + C.nr1 * U) * R.r - C.munk * (my - mx) * ur * vr;
   X -= 0.06 * C.m * Math.abs(R.r) * Math.abs(ur);
   // in a seaway: heave and pitch on springs and dampers at the forefoot and the transom, riding the swell and the chop
   {
