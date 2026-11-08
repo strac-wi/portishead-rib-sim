@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Portishead RIB Sim</title>
+<meta name="description" content="A 5 m RIB in Portishead Marina: leave the berth, work the lock on the real tide, and practise coming alongside and man overboard in the Severn.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: full-bleed view of Portishead from a RIB; nav readouts top-left, chart, lock panel and checklist top-right,
+   the RIB's controls bottom-left. Deliberately a single dark theme: a console at sea. */
+:root{
+  --levH:clamp(232px,44vh,330px);
+  --bg:#0a1115;--panel:#111d23;--glass:rgba(10,18,22,.86);--line:#243640;--line-hi:#36505c;
+  --ink:#dbe6eb;--dim:#7f96a1;--amber:#f2b33d;--amber-ink:#1d1406;--cyan:#5fc9da;--red:#ea4a4f;--green:#4cc58e;
+  --f-display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-display);font-size:15px;overflow:hidden;-webkit-font-smoothing:antialiased}
+#app{height:100%;display:grid;grid-template-rows:minmax(0,1fr)}
+#view{position:relative;min-height:0;overflow:hidden}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#gl:active{cursor:grabbing}
+button{font-family:var(--f-display);font-size:13px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;background:#16242b;color:var(--ink);border:1px solid var(--line-hi);border-radius:4px;padding:5px 9px;cursor:pointer;line-height:1.1;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+button:hover{border-color:var(--amber)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+button.on{background:var(--amber);color:var(--amber-ink);border-color:var(--amber)}
+button.go{background:var(--green);color:#06150e;border-color:var(--green)}
+button.warn{background:var(--red);color:#fff;border-color:var(--red)}
+button.need{box-shadow:0 0 0 2px var(--amber)}
+output{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* ---------- HUD ---------- */
+.hud{position:absolute;top:0;pointer-events:none;padding-top:10px;display:flex;flex-direction:column;gap:8px;z-index:2}
+.hud button,.hud canvas{pointer-events:auto}
+#hudL{left:0;padding-left:max(16px,env(safe-area-inset-left,0px));max-width:calc(100% - 32px)}
+#hudR{right:0;padding-right:max(16px,env(safe-area-inset-right,0px));align-items:flex-end}
+.brand{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.brand b{font-size:22px;font-weight:700;letter-spacing:.18em}
+.brand span{font-size:13px;letter-spacing:.14em;color:var(--amber);text-transform:uppercase;font-weight:600}
+.navgrid{display:grid;grid-template-columns:repeat(6,auto);background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:4px;width:max-content;max-width:100%}
+.nv{display:flex;flex-direction:column;padding:3px 9px;min-width:62px}
+.nv span{font-size:11px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+.nv b{font-family:var(--f-mono);font-size:17px;font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tools{display:flex;flex-wrap:wrap;gap:6px}
+.tools button{background:var(--glass)}
+.tools button.on{background:var(--amber);color:var(--amber-ink)}
+.tmore{pointer-events:auto;display:flex;flex-direction:column;gap:6px;width:max-content;max-width:100%;box-sizing:border-box;background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:6px}
+#fpsBox{position:fixed;left:50%;bottom:8px;transform:translateX(-50%);z-index:30;pointer-events:none;font:12px/1.3 var(--f-mono);color:var(--ink);background:var(--glass);border:1px solid var(--line);border-radius:4px;padding:3px 8px}
+.chart{position:relative;background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:4px}
+#map{display:block;width:230px;height:230px;border-radius:3px;cursor:zoom-in}
+#bMapZoom{position:absolute;right:8px;bottom:8px;font-size:11px;padding:3px 6px}
+#mapX{position:fixed;z-index:7;top:max(16px,env(safe-area-inset-top,0px));bottom:16px;left:50%;transform:translateX(-50%);width:min(980px,calc(100vw - 32px));padding:6px;box-sizing:border-box;display:flex;flex-direction:column;gap:6px}
+#mapXC{flex:1;min-height:0;width:100%;border-radius:4px;touch-action:none;cursor:grab}
+#mapXC.drag{cursor:grabbing}
+.mxbar{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.mxbar button{min-width:44px}
+@media (max-width:760px){#mapX{top:52px;bottom:max(10px,env(safe-area-inset-bottom,0px));width:calc(100vw - 16px)}}
+.check{background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:8px 10px;width:230px;box-sizing:border-box;pointer-events:auto}
+.check h3{margin:0 0 5px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);text-wrap:balance}
+.check ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px}
+.check li{font-size:14px;line-height:1.2;padding-left:18px;position:relative;color:var(--ink)}
+.check li::before{content:"";position:absolute;left:0;top:3px;width:9px;height:9px;border:1.5px solid var(--dim);border-radius:2px}
+.check li.ok{color:var(--dim)}
+.check li.ok::before{background:var(--green);border-color:var(--green)}
+.check li.note::before{border-radius:50%;border-color:var(--cyan)}
+/* the lock: its two sets of traffic lights, the three water levels and the next lockings */
+.lockp{background:var(--glass);border:1px solid var(--line);border-radius:6px;padding:7px 10px 8px;width:230px;box-sizing:border-box;pointer-events:auto}
+.lockp h3{margin:0 0 4px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);display:flex;justify-content:space-between;gap:6px}
+.lockp h3 span{color:var(--ink);letter-spacing:.06em}
+.lsig{display:flex;gap:10px;align-items:center;margin:2px 0 5px}
+.sig{display:flex;flex-direction:column;gap:2px;padding:3px;background:#05080a;border-radius:4px;border:1px solid var(--line)}
+.sig i{width:9px;height:9px;border-radius:50%;background:#1d2629}
+.sig i.r{background:#ff3b30;box-shadow:0 0 6px #ff3b30}.sig i.g{background:#3dff6a;box-shadow:0 0 6px #3dff6a}.sig i.w{background:#fff;box-shadow:0 0 6px #fff}
+.lsig small{display:block;font-size:11px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
+.lsig b{font-size:13px;font-weight:600}
+.lvl{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.lvl output{font-size:13px;color:var(--ink);text-transform:none;letter-spacing:0}
+.lnext{font-size:13px;margin:5px 0 6px;line-height:1.25}
+#vhfLog{font-family:var(--f-mono);font-size:11.5px;line-height:1.35;color:#bfe9d0;max-height:84px;overflow-y:auto;margin:4px 0 0;padding:0;list-style:none}
+#vhfLog li{margin-bottom:2px}#vhfLog li.me{color:#9fc6d3}
+#toasts{position:absolute;left:50%;transform:translateX(-50%);bottom:14px;z-index:3;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;width:min(520px,calc(100% - 32px))}
+.toast{background:var(--glass);border:1px solid var(--line-hi);border-left:3px solid var(--cyan);border-radius:4px;padding:6px 12px;font-size:15px;text-align:center}
+.toast.warn{border-left-color:var(--red)}.toast.good{border-left-color:var(--green)}.toast.radio{border-left-color:#7ad08f;font-family:var(--f-mono);font-size:13px;text-align:left}
+
+/* ---------- overlays ---------- */
+.overlay{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(6,12,15,.72);padding-block:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));overflow-y:auto}
+.card{background:var(--panel);border:1px solid var(--line-hi);border-radius:8px;padding:22px 24px;max-width:660px;width:100%;box-sizing:border-box;margin:auto}
+.sitename{margin:0 0 6px;font-size:14px;letter-spacing:.32em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.eyebrow{margin:0;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);font-weight:600}
+.card h1{margin:4px 0 8px;font-size:52px;line-height:.95;font-weight:700;letter-spacing:.04em;text-transform:uppercase;text-wrap:balance}
+.card h2{margin:0 0 8px;font-size:28px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.card h3{margin:14px 0 4px;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber)}
+.card p{font-size:17px;line-height:1.4;margin:0 0 10px;max-width:64ch}
+.card .fine{font-size:14px;color:var(--dim)}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}
+fieldset{border:1px solid var(--line);border-radius:6px;margin:0;padding:8px 10px 10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+legend{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);padding:0 4px}
+fieldset label{display:flex;gap:8px;align-items:flex-start;font-size:16px;line-height:1.25;cursor:pointer}
+fieldset label small{display:block;color:var(--dim);font-size:13px}
+fieldset input{accent-color:var(--amber);margin-top:3px}
+.row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:15px;margin:6px 0 4px}
+.keys kbd{font-family:var(--f-mono);font-size:12px;background:#1b2a31;border:1px solid var(--line-hi);border-radius:3px;padding:1px 5px;white-space:nowrap;justify-self:start}
+.help ol,.help ul{margin:0 0 6px;padding-left:20px;font-size:16px;line-height:1.4}
+#ribHud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:16px;z-index:3;padding:8px 10px;width:300px;box-sizing:border-box;pointer-events:auto}
+@media (min-width:701px){body.touchon #ribHud{bottom:calc(max(14px,env(safe-area-inset-bottom,0px)) + var(--levH) + 18px)}}
+.rg{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.rlev{position:relative;width:12px;height:52px;border:1px solid var(--line-hi);border-radius:3px;background:rgba(0,0,0,.25)}
+.rlev::after{content:'';position:absolute;left:-3px;right:-3px;top:50%;height:1px;background:var(--line-hi)}
+.rlev i{position:absolute;left:1px;right:1px;background:var(--amber);border-radius:2px}
+#rGear{font-family:var(--f-display);font-size:30px;width:26px;text-align:center}
+#rGear.on{color:var(--amber)}
+.rcol{flex:1;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.rtrim{height:6px;border:1px solid var(--line-hi);border-radius:3px;position:relative}
+.rtrim i{position:absolute;left:0;top:0;bottom:0;background:var(--cyan);border-radius:3px}
+.rvent{color:#ff8d8f;min-height:15px}
+.rbtns{display:flex;flex-wrap:wrap;gap:5px}
+.rbtns button{padding:4px 7px;font-size:12px}
+.rfold{display:none}
+@media (max-width:700px){#ribHud{top:92px;bottom:auto;right:auto;width:auto;max-width:calc(100vw - 172px);padding:4px 6px;border-radius:6px;background:rgba(10,17,21,.6)}
+  .rg{margin:0 0 4px;gap:6px;cursor:pointer;-webkit-user-select:none;user-select:none} .rlev,.rtrim,#rTrimUp,#rTrimDn{display:none} #rGear{font-size:15px;width:auto;line-height:1}
+  .rcol{flex:0 1 auto;flex-direction:row;align-items:baseline;gap:6px;font-size:11px} .rvent:empty{display:none}
+  .rbtns{gap:3px} .rbtns button{padding:5px 6px;font-size:10px;letter-spacing:.04em}
+  .rfold{display:inline;font-size:12px!important;padding:2px 6px;border:1px solid var(--line-hi);border-radius:4px;color:var(--ink);white-space:nowrap}
+  body.ribfold .rbtns button:not(.need){display:none} body.ribfold .rg{margin:0 0 4px}}
+#report{position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:4;max-width:min(440px,calc(100% - 32px))}
+#report table{width:100%;border-collapse:collapse;font-size:15px;margin:6px 0 12px}
+#report td{padding:3px 0;border-bottom:1px solid var(--line)}
+#report td:last-child{text-align:right;font-family:var(--f-mono);font-size:13px}
+#report td.neg{color:#ff8d8f}#report td.pos{color:#8fe0b9}
+.lrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* touch controls: the RIB's single lever (a narrow slot with a neutral notch and a tick-over notch either side, dragged rather
+   than tapped so a stray touch cannot open the throttle) and the wheel, each following its own finger */
+#touch{position:absolute;left:0;right:0;bottom:0;z-index:3;display:flex;justify-content:space-between;align-items:flex-end;gap:12px;pointer-events:none;
+  padding:0 max(16px,env(safe-area-inset-right,0px)) max(14px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.tsteer{pointer-events:auto;touch-action:none;position:relative;flex:none;background:rgba(10,18,22,.5);border:2px solid rgba(219,230,235,.3);-webkit-user-select:none;user-select:none;width:min(300px,calc(100vw - 116px));height:66px;border-radius:33px}
+.tknob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(242,179,61,.92);box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none}
+.tright{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.tlev{pointer-events:auto;touch-action:none;position:relative;flex:none;width:56px;height:var(--levH);border-radius:28px;background-color:rgba(10,18,22,.5);border:2px solid rgba(219,230,235,.3);-webkit-user-select:none;user-select:none;
+  background-image:linear-gradient(rgba(219,230,235,.55),rgba(219,230,235,.55)),linear-gradient(90deg,rgba(219,230,235,.22),rgba(219,230,235,.22));background-size:52px 2px,4px calc(100% - 64px);background-position:center;background-repeat:no-repeat}
+.tlev-n{position:absolute;left:9px;right:9px;height:2px;margin-top:-1px;background:rgba(242,179,61,.6);pointer-events:none}
+.tlev-n.up{top:calc(50% - 0.17 * ((var(--levH) - 4px) / 2 - 40px))}.tlev-n.dn{top:calc(50% + 0.17 * ((var(--levH) - 4px) / 2 - 40px))}
+.tlev-n::after{content:'Idle';position:absolute;left:calc(100% + 17px);top:-7px;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:rgba(219,230,235,.75);text-shadow:0 1px 3px rgba(0,0,0,.8)}
+.tlev-k{position:absolute;left:50%;top:50%;width:46px;height:24px;margin:-12px 0 0 -23px;border-radius:7px;background:rgba(242,179,61,.92);box-shadow:0 2px 10px rgba(0,0,0,.45);pointer-events:none}
+.trow{display:flex;gap:8px;pointer-events:auto;flex-wrap:wrap;justify-content:flex-end}
+.trow button{background:var(--glass);padding:8px 12px}
+.trow button.on{background:var(--amber);color:var(--amber-ink);border-color:var(--amber)}
+.tl{position:absolute;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(219,230,235,.65);pointer-events:none}
+.t-top{top:7px;left:50%;transform:translateX(-50%)}.t-bot{bottom:7px;left:50%;transform:translateX(-50%)}
+.t-l{left:13px;top:50%;transform:translateY(-50%)}.t-r{right:13px;top:50%;transform:translateY(-50%)}.t-mid{left:50%;top:5px;transform:translateX(-50%);font-size:10px}
+#mbar,#mNext{display:none}
+@media (max-width:760px){
+  #mbar{display:flex;position:absolute;top:0;left:0;right:0;z-index:4;align-items:center;gap:14px;background:var(--glass);border-bottom:1px solid var(--line);
+    padding-block:6px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .mv{display:flex;align-items:baseline;gap:5px}
+  .mv i{font-style:normal;font-size:11px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+  .mv b{font-family:var(--f-mono);font-size:15px;font-weight:500;font-variant-numeric:tabular-nums}
+  #mNext{display:block;position:absolute;top:44px;left:max(16px,env(safe-area-inset-left,0px));right:150px;z-index:2;margin:0;pointer-events:none;
+    background:var(--glass);border:1px solid var(--line);border-left:3px solid var(--cyan);border-radius:3px;padding:4px 8px;font-size:14px;line-height:1.25}
+  #mNext:empty{display:none}
+  #hudL{display:none;top:44px;z-index:5;background:var(--panel);border:1px solid var(--line-hi);border-radius:0 0 6px 0;padding-bottom:10px;padding-right:12px}
+  #hudL.open{display:flex;pointer-events:auto;max-height:calc(100% - 52px);overflow-y:auto;overscroll-behavior:contain}
+  #hudR{top:44px}
+  .check{display:none}
+  .lockp{width:150px;padding:5px 7px}.lockp .lvl,.lockp #vhfLog{display:none}.lnext{font-size:12px;margin:3px 0 4px}
+  #toasts{bottom:auto;top:96px;z-index:4}
+  .navgrid{grid-template-columns:repeat(3,auto)}
+  .nv{min-width:54px;padding:2px 6px}.nv b{font-size:14px}
+  #map{width:118px;height:118px}
+  #bMapZoom{right:6px;bottom:6px;font-size:10px;padding:2px 5px}
+  .brand b{font-size:18px}.card h1{font-size:38px}
+}
+@media (max-width:380px){#mNext{right:132px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="view">
+    <canvas id="gl" aria-label="3D view of Portishead Marina and the Severn"></canvas>
+    <div id="fpsBox" hidden></div>
+
+    <div class="hud" id="hudL">
+      <div class="brand"><b>Marine Traffic Sim</b><span id="routeTag">Portishead · Patrol 660</span></div>
+      <div class="navgrid">
+        <div class="nv"><span>Hdg</span><b id="nHdg">---</b></div>
+        <div class="nv"><span>SOG kn</span><b id="nSog">0.0</b></div>
+        <div class="nv"><span>COG</span><b id="nCog">---</b></div>
+        <div class="nv"><span>STW kn</span><b id="nStw">0.0</b></div>
+        <div class="nv"><span>ROT °/min</span><b id="nRot">0</b></div>
+        <div class="nv"><span>Depth m</span><b id="nDep">-</b></div>
+        <div class="nv"><span>Wind</span><b id="nWind">-</b></div>
+        <div class="nv"><span>Stream</span><b id="nCur">-</b></div>
+        <div class="nv"><span>RPM</span><b id="nRpm">-</b></div>
+        <div class="nv"><span>Clock</span><b id="nClock">-</b></div>
+        <div class="nv" title="Height of tide above chart datum at Portishead, rising or falling"><span>Tide m CD</span><b id="nTide">-</b></div>
+        <div class="nv"><span id="nTideL">Next HW</span><b id="nTideT">-</b></div>
+      </div>
+      <div class="tools">
+        <button id="bWarp" title="Time compression (T)">Time ×1</button>
+        <button id="bCam" title="Cycle camera (V)">View: chase</button>
+        <button id="bSound" title="Mute (M)">Sound on</button>
+        <button id="bVhf" title="Call Portishead Quays Marina on VHF channel 80 (P)">VHF 80</button>
+        <button id="bMore" aria-expanded="false" aria-controls="toolsMore">Settings ▾</button>
+      </div>
+      <div id="toolsMore" class="tmore" hidden>
+        <div class="tools">
+          <button id="bGfx" title="Shadows, reflections of light and the trees">Detail: high</button>
+          <button id="bTouch" title="On-screen lever and wheel">Touch controls: off</button>
+          <button id="bNames" title="Names over the land and water">Place names: on</button>
+          <button id="bFps" title="Frames a second">Frame rate: off</button>
+        </div>
+        <div class="tools">
+          <button id="bSkip" title="Jump the clock forward to the next locking">Skip to next lock</button>
+          <button id="bHelp">Help</button>
+          <button id="bNew" title="Back to the start screen">New game</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud" id="hudR">
+      <div class="chart"><canvas id="map" width="460" height="460" aria-label="Chart: tap to expand" title="Click to open the full chart"></canvas><button id="bMapZoom">Approaches</button></div>
+      <div class="lockp" id="lockP">
+        <h3>Lock <span id="lkState">-</span></h3>
+        <div class="lsig">
+          <div class="sig" id="sigIn" title="Marina side"><i></i><i></i><i></i></div><div><small>Marina side</small><b id="lkIn">-</b></div>
+          <div class="sig" id="sigOut" title="Sea side"><i></i><i></i><i></i></div><div><small>Sea side</small><b id="lkOut">-</b></div>
+        </div>
+        <div class="lvl"><span>Marina<br><output id="lvM">-</output></span><span>Chamber<br><output id="lvL">-</output></span><span>Sea<br><output id="lvS">-</output></span></div>
+        <p class="lnext" id="lkNext">-</p>
+        <button id="bVhf2" class="go">Call marina · VHF 80</button>
+        <ul id="vhfLog" aria-live="polite"></ul>
+      </div>
+      <div class="check"><h3 id="ckTitle">Checklist</h3><ul id="ckList"></ul></div>
+    </div>
+
+    <div id="mapX" class="card" hidden>
+      <canvas id="mapXC" aria-label="Chart: drag to move, pinch or scroll to zoom"></canvas>
+      <div class="mxbar"><button id="mxIn" aria-label="Zoom in">+</button><button id="mxOut" aria-label="Zoom out">−</button><button id="mxTrack" hidden>Last drill</button><button id="mxCentre" class="on">Follow boat</button><button id="mxClose">Close</button></div>
+    </div>
+    <div id="mbar">
+      <button id="bMenu" aria-expanded="false" aria-controls="hudL">Menu</button>
+      <span class="mv"><i>Hdg</i><b id="mHdg">---</b></span>
+      <span class="mv"><i>kn</i><b id="mSog">0.0</b></span>
+      <span class="mv"><i>Tide</i><b id="mTide">-</b></span>
+    </div>
+    <p id="mNext"></p>
+    <div id="touch" hidden>
+      <div class="tlev" id="tLev" aria-label="Throttle and gear lever: ahead, neutral, astern, with a tick-over notch either side of neutral"><span class="tl t-top">Ahead</span><span class="tl t-bot">Astern</span><i class="tlev-n up"></i><i class="tlev-n dn"></i><div class="tlev-k" id="tLevK"></div></div>
+      <div class="tright">
+        <div class="trow"><button id="tStop">Neutral</button><button id="tHorn">Horn</button><button id="tWarp" title="Time compression">×1</button><button id="tTrU" title="Trim out while held">Trim ▲</button><button id="tTrD" title="Trim in while held">Trim ▼</button><button id="tCam" title="Change camera view">View</button></div>
+        <div class="tsteer" id="tSteer" aria-label="Wheel"><span class="tl t-l">Port</span><span class="tl t-mid">Wheel</span><span class="tl t-r">Stbd</span><div class="tknob" id="tSteerK"></div></div>
+      </div>
+    </div>
+    <div id="toasts" aria-live="polite"></div>
+    <div id="ribHud" class="card" hidden>
+      <div class="rg"><div class="rlev" title="Throttle and gear lever"><i id="rLev"></i></div><b id="rGear">–</b>
+        <div class="rcol"><span>Trim <b id="rTrim">0°</b></span><div class="rtrim"><i id="rTrimBar"></i></div><span id="rVent" class="rvent"></span></div><span class="rfold" id="rFold">Controls ▾</span></div>
+      <div class="rbtns"><button id="rEng" title="Start or stop the engine (X)">Start eng</button><button id="rKill" title="Clip the kill cord on or off (K)">Kill cord: on</button><button id="rLines" title="Make fast or let go (L)">Let go lines</button>
+        <button id="rTrimUp" title="Trim out, bow up (R)">Trim ▲</button><button id="rTrimDn" title="Trim in, bow down (F)">Trim ▼</button><button id="rMOB" class="warn" title="Man overboard (O)">MOB</button><button id="rDrill" title="Choose a drill (G)">Drill: Free practice</button></div>
+    </div>
+
+    <div id="report" class="card" hidden>
+      <p class="eyebrow" id="repEyebrow">Drill</p>
+      <h2 id="repTitle">Done</h2>
+      <table id="repTable"></table>
+      <div class="lrow"><button id="repClose" class="on">Carry on</button><button id="repTrack">Show track</button></div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="card">
+        <p class="sitename">Marine Traffic Sim</p>
+        <p class="eyebrow">Portishead · Severn Estuary</p>
+        <h1>RIB: Portishead</h1>
+        <p>A Highfield Patrol 660, 6.5 m with a Honda BF150, lies on the A pontoon at Portishead Marina, kill cord on. Leave the berth, lock out on the real tide, and work her in the Severn: the second biggest tidal range in the world and a stream to match. Come alongside an empty hammerhead, or practise man overboard.</p>
+        <div class="opts">
+          <fieldset>
+            <legend>Tide and time</legend>
+            <label><input type="radio" name="tide" value="window" checked><span>Lock window, springs<small>The next big tide by day, two and a half hours before high water. The lock is working.</small></span></label>
+            <label><input type="radio" name="tide" value="neap"><span>Lock window, neaps<small>The next small tide by day, three hours before high water.</small></span></label>
+            <label><input type="radio" name="tide" value="free"><span>Free-flow<small>A spring tide of 12 m or more: both gates open near high water and you run straight through.</small></span></label>
+            <label><input type="radio" name="tide" value="live"><span>Now<small>Today's tide at the time on your device. The lock may well be shut.</small></span></label>
+            <label><input type="radio" name="tide" value="low"><span>Low water<small>The lock is shut and the outer harbour is mud. Practise in the marina.</small></span></label>
+          </fieldset>
+          <fieldset>
+            <legend>Light</legend>
+            <label><input type="radio" name="light" value="day" checked><span>Day</span></label>
+            <label><input type="radio" name="light" value="dusk"><span>Dusk<small>Navigation lights and the lock signals stand out.</small></span></label>
+            <label><input type="radio" name="light" value="night"><span>Night<small>Find the pier head and the buoys by their lights.</small></span></label>
+          </fieldset>
+          <fieldset>
+            <legend>Weather</legend>
+            <label><input type="radio" name="wx" value="flat"><span>Flat calm</span></label>
+            <label><input type="radio" name="wx" value="calm" checked><span>Calm<small>Light airs.</small></span></label>
+            <label><input type="radio" name="wx" value="moderate"><span>Moderate south-westerly<small>16 kn, wind against tide on the ebb.</small></span></label>
+            <label><input type="radio" name="wx" value="fresh"><span>Fresh westerly<small>26 kn gusting: a short steep sea off the point.</small></span></label>
+          </fieldset>
+        </div>
+        <div class="row"><button id="bGo" class="go">Start</button><button id="bHelp2">How it works</button></div>
+        <p class="fine" style="margin-top:12px">Marina basin, pontoons, pier, lock walls, buildings and roads from OpenStreetMap (© OpenStreetMap contributors, ODbL), the pontoons in the north-east corner moved onto the satellite view; berths and the boats in them from satellite views. Depths and drying heights from screenshots of a chart app. Land heights from Copernicus DEM GLO-30 (© DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA). Tide from the Avonmouth gauge's harmonic constants, TICON-4 (CC BY 4.0), fitted to the marina's 2026 Portishead tide table. An unofficial simulator, not affiliated with or endorsed by Boatfolk or Portishead Marina. Not for navigation.</p>
+      </div>
+    </div>
+
+    <div id="help" class="overlay help" hidden>
+      <div class="card">
+        <p class="eyebrow">Notes</p>
+        <h2>Portishead in a RIB</h2>
+        <h3>The boat</h3>
+        <p>A Highfield Patrol 660: 6.5 m over charcoal tubes, 2.5 m beam, a 26° aluminium deep-V hull, a Honda BF150 (150 hp four-stroke, 2.14:1 gearbox, a 14.75 x 16 three-blade stainless propeller), a centre console with a seat ahead of it, four jockey seats in two pairs behind it, a rear bench and an A-frame over the engine. Her hull's resistance is worked back from Powerboat Magazine's test of a 660 (with a Suzuki 175: 38.4 kn at 5,950 rpm, on the plane from about 8 kn); with the Honda she makes about 34 kn at 5,870 rpm with the leg trimmed well, the rpm in the upper half of Honda's 5,000-6,000 band. Her mass (about 1,150 kg with two aboard) and the propeller's figures are estimates.</p>
+        <h3>Keys</h3>
+        <div class="keys">
+          <kbd>X</kbd><span>Start or stop the engine (lever in neutral, kill cord on)</span>
+          <kbd>W / S</kbd><span>The single lever: ahead, neutral, astern. It stops in neutral and at tick-over either side; press again to go on. Space snaps it to neutral</span>
+          <kbd>A / D</kbd><span>Wheel; it stays where you leave it. C centres it</span>
+          <kbd>R / F</kbd><span>Trim out / in</span>
+          <kbd>L</kbd><span>Let go, or make fast when alongside: stopped, parallel and within a step of a pontoon, a hammerhead or one of the lock's floating pontoons</span>
+          <kbd>P</kbd><span>Call Portishead Quays Marina on VHF 80 for the next lock</span>
+          <kbd>K · O · G</kbd><span>Kill cord · man overboard · choose a drill</span>
+          <kbd>H</kbd><span>Horn (hold)</span>
+          <kbd>V · T · M</kbd><span>Camera · time compression · mute</span>
+          <kbd>Mouse</kbd><span>Drag to orbit or look about, scroll to zoom, double-click to reset</span>
+          <kbd>Controller</kbd><span>R2 ahead, L2 astern, left stick steers, ✕ engine, ○ lines, △ view, □ horn, R1/L1 trim, D-pad left man overboard, D-pad right time, D-pad up VHF</span>
+        </div>
+        <h3>The lock</h3>
+        <p>The marina is held at about 13.3 m above chart datum, roughly six metres deep. The tide outside runs from about 1 m at low water springs to over 13 m at high water, so the lock works only from three and a half hours before high water to three and a half after at springs, four at neaps. In the window it runs a half-hour cycle: lock-outs on the hour and half hour (the marina-side gates open, you go in, the chamber is let down to the sea), lock-ins a quarter of an hour later (the sea-side gates open, you go in, the chamber fills to the marina). Call on VHF 80 (P) and you are told the next one.</p>
+        <p>Signals on the port side of each entrance: three reds, do not enter. Green, white, green: proceed with caution. Go in slowly, come alongside one of the floating pontoons along each wall and make fast (L) to its cleats. Leave when the far gates are open and the light is green-white-green.</p>
+        <p>On a spring tide of 12 m or more the marina may free-flow: the marina is let down a little beforehand, both gates open as the tide reaches the marina's level, and stay open while it rises (never above 14 m), five to thirty minutes. Then you can run straight through on green.</p>
+        <h3>Outside</h3>
+        <p>Leave the lock along the sea wall and the pier: a channel about 30 m wide is dredged from the approach along their face to beyond the pier head, drying 2.0 m (estimated), so there are three and a half metres even when the lock first opens. Outside it the outer harbour dries 4 to 10 m on the chart: stay in the channel, shown pecked on the chart. The pier head shows a green light (Iso G 2s). Off the pier the stream runs up and down the estuary: east-north-east on the flood, west-south-west on the ebb, at up to four or five knots at springs in the deep water and much less in Portishead Pool, where it eddies westward towards the pier head for most of the flood. Firefly Rocks lie north-east of the pier inside the Firefly buoy; keep close to the buoy. The rates are estimates, not tidal-stream atlas figures.</p>
+        <p>Read the stream off the water. The Severn is brown with silt and the whole surface moves: lines of scum and patches of paler water slide past with it, boils well up where it runs hard over the bottom, and it gets rough over the shoals and where the wind blows against it. Each buoy leans and dips downstream, heaps a pillow of water against its upstream side and trails broken water away from it; the longer and whiter the trail, the harder the stream is running.</p>
+        <h3>Drills</h3>
+        <p><b>Come alongside a hammerhead</b>: an empty hammerhead at the end of one of the pontoon arms is outlined in green; let go, come round and lay her alongside it, stopped and parallel, then make fast. <b>Lock out and back in</b>: call the marina, lock out, round the pier head, call again, lock back in and return to your berth. <b>Man overboard</b>: get out into the estuary and above 4 kn; someone goes over the side and drifts with the stream. Turn back, keep them in sight, come up to them slowly into the stream and wind, neutral before they are near the prop, and stop with them alongside the console. O throws someone over at any time.</p>
+        <h3>The tide</h3>
+        <p>The tide is worked out on your device from the Avonmouth gauge's harmonic constants (TICON-4, 1961 to 2012), the published Portishead times being Avonmouth's. Fitted to Portishead Marina's 2026 tide table it comes within about 15 cm and 10 minutes of it. Heights are above chart datum. Not for navigation.</p>
+        <p class="fine">The lock's chamber and gate positions are from OpenStreetMap; its sill and floor levels, the dredged depth just outside the gates, the sluice rates and the stream rates are estimates. Depths elsewhere are the chart's. Not for navigation.</p>
+        <div class="row" style="margin-top:12px"><button id="helpClose" class="on">Close</button></div>
+      </div>
+    </div>
+  </div>
+</div>
