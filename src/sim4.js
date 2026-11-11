@@ -10,9 +10,10 @@ function toast(text, kind, ms = 4200) {
 }
 // ---------- VHF channel 80: Portishead Quays Marina ----------
 function radio(who, text) {
-  const li = document.createElement('li'); li.className = who === 'me' ? 'me' : ''; li.textContent = (who === 'me' ? 'You: ' : 'Marina: ') + text;
+  const lab = who === 'me' ? 'You' : who === 'marina' ? 'Marina' : who;
+  const li = document.createElement('li'); li.className = who === 'me' ? 'me' : ''; li.textContent = lab + ': ' + text;
   const ul = $('vhfLog'); ul.appendChild(li); while (ul.children.length > 6) ul.firstChild.remove(); ul.scrollTop = ul.scrollHeight;
-  toast((who === 'me' ? '📻 ' : '📻 Portishead Quays Marina: ') + text, 'radio', 7000);
+  toast((who === 'me' ? '📻 ' : who === 'marina' ? '📻 Portishead Quays Marina: ' : `📻 ${who}: `) + text, 'radio', 7000);
   if (AU.beep) AU.beep(who === 'me' ? 1400 : 900, 0.06);
 }
 function speak(text) {
@@ -32,15 +33,15 @@ function callMarina() {
   const hw = `High water ${T5(W.hw.ms)}, ${W.hw.h.toFixed(1)} metres`;
   let rep;
   if (LKS.mode === 'ff') rep = 'RIB Patrol, we are free-flowing: both gates are open. Proceed with caution on green-white-green.';
-  else if (intent === 'lock') rep = LKS.mode === 'level' ? 'RIB Patrol, stay made fast, we are levelling you now. Out on green-white-green.' : 'RIB Patrol, stay made fast please. The gates will open shortly; out on green-white-green.';
+  else if (intent === 'lock') rep = LKS.mode === 'lines' ? 'RIB Patrol, make fast to the pontoon please and we will level you.' : LKS.mode === 'level' ? 'RIB Patrol, stay made fast, we are levelling you now. Out on green-white-green.' : 'RIB Patrol, stay made fast please. The gates will open shortly; out on green-white-green.';
   else if (!W.open && ms < W.from) rep = `RIB Patrol, the lock is shut until ${T5(W.from)}. First lock-out ${T5(Math.ceil(W.from / 1800000) * 1800000)}, first lock-in a quarter of an hour after. ${hw}.`;
   else if (!N.out.length && !N.inn.length) rep = `RIB Patrol, that was the last lock on this tide. ${hw}.`;
   else if (intent === 'out') {
     const nowOpen = LKS.sigIn === 'go';
-    rep = nowOpen ? 'RIB Patrol, lock-out now: come straight in on green-white-green and make fast either side. Lines and fenders both sides.' : `RIB Patrol, next lock-out ${T5(N.out[0])}. Make your way to the lock and wait clear of the gates; in on green-white-green. Lines and fenders both sides.`;
+    rep = (nowOpen ? 'RIB Patrol, lock-out now: come straight in on green-white-green and make fast either side. Lines and fenders both sides.' : `RIB Patrol, next lock-out ${T5(N.out[0])}. Make your way to the lock and wait clear of the gates; in on green-white-green. Lines and fenders both sides.`) + trCompany('O');
   } else {
     const nowOpen = LKS.sigOut === 'go';
-    rep = nowOpen ? 'RIB Patrol, lock-in now: come in on green-white-green and make fast either side.' : `RIB Patrol, next lock-in ${T5(N.inn[0])}. Hold off clear of the entrance along the pier; in on green-white-green. Lines and fenders both sides.`;
+    rep = (nowOpen ? 'RIB Patrol, lock-in now: come in on green-white-green and make fast either side.' : `RIB Patrol, next lock-in ${T5(N.inn[0])}. Hold off clear of the entrance along the pier; in on green-white-green. Lines and fenders both sides.`) + trCompany('I');
   }
   setTimeout(() => say(rep + ' Over.'), 2200);
 }
@@ -312,7 +313,7 @@ $('bSkip').onclick = () => {
 function fastForward(target) {
   while (S.ms < target) { const d = Math.min(5, (target - S.ms) / 1000); S.t += d; S.ms = S.ms0 + S.t * 1000; S.tide = tideCD(S.ms); updateLock(d); }
   if (RB.fast && RB.pose) { RB.x = RB.pose.x; RB.y = RB.pose.y; RB.psi = RB.pose.psi; RB.u = RB.v = RB.r = 0; }
-  S.ext = tideExtremes(S.ms - 7 * 3600e3, S.ms + 40 * 3600e3);
+  S.ext = tideExtremes(S.ms - 7 * 3600e3, S.ms + 40 * 3600e3); trReset();
 }
 // pointer: orbit the chase camera, look about at the helm; pinch or scroll to zoom
 let drag = null; const ptrs = new Map(); let pinch = null;
@@ -398,7 +399,7 @@ function newGame() {
   S = { ms0, t: 0, ms: ms0, tide: tideCD(ms0), wx: WEATHER[wxK], wxKey: wxK, warp: 1, running: true, chop: null, horn: false, wind: { x: 0, y: 0, spd: 0, from: 220 }, ext: tideExtremes(ms0 - 7 * 3600e3, ms0 + 40 * 3600e3) };
   updateEnv(0);
   // the lock as it would be: run it on from an hour and a half before so its gates and levels are where they would be
-  LKS.M = 13.3; LKS.L = 13.3; LKS.gIn = 1; LKS.gOut = 0; LKS.ff = false; LKS.ffDone = -1; LKS.ext = null; LKS.mode = 'inOpen';
+  LKS.M = 13.3; LKS.L = 13.3; LKS.gIn = 1; LKS.gOut = 0; LKS.ff = false; LKS.ffDone = -1; LKS.ext = null; LKS.mode = 'inOpen'; LKS.hold = null; RB.lockFrom = null; trReset();
   { const keep = S.ms0; S.ms0 = keep - 90 * 60000; S.t = 0; S.ms = S.ms0; const quiet = say; window.__quiet = true; void quiet; while (S.ms < keep) { S.t += 5; S.ms = S.ms0 + S.t * 1000; S.tide = tideCD(S.ms); updateLock(5); } S.ms0 = keep; S.t = 0; S.ms = keep; S.tide = tideCD(keep); window.__quiet = false; }
   setLight(light);
   scene.fog.far = S.wx.vis; for (const m of [waterNearMat, waterFarMat, basinWaterMat]) m.uniforms.uFogFar.value = S.wx.vis;
@@ -449,7 +450,7 @@ function frame(now) {
     ribHandleKeys(rdt);
     const sdt = rdt * S.warp; S.t += sdt; S.ms = S.ms0 + S.t * 1000;
     updateEnv(sdt); updateLock(sdt);
-    ribUpdate(sdt); updateRibVisuals(sdt); updateWake();
+    ribUpdate(sdt); updateRibVisuals(sdt); updateWake(); trUpdate(sdt);
   }
   updateTouch(); updateCamera(); updateMarina(); updateMarks(); if (S.running) updateFlowFoam(Math.min(rdt * S.warp, 0.25));
   const [sx, sz] = waterCentre();
@@ -480,6 +481,6 @@ setLight('day'); setTouch(TOUCH.on); resize();
 // a world before a game starts: the marina at its level, the tide as it is now
 LKS.M = 13.3; LKS.L = 13.3;
 { const n = Date.now(); S = null; MAR.water.position.y = 13.3; MAR.pont.position.y = 13.3; MAR.boats.position.y = 13.3; MAR.lockWater.position.y = 13.3; waterNear.position.y = waterFar.position.y = tideCD(n); SEA_TIDE.value = tideCD(n); }
-window.PTH = { get S() { return S; }, RIBC, ribPhys, streamBase, currentAt, updateLock, newGame, pickStart, RB, LKS, heightAt, waterBody, levelAt, tideCD, tideExtremes, lockWindow, nextLockTimes, callMarina, ribLines, ribEngine, ribSetDrill, solidAt, inChamber, lkP, LOCK, PD, cam, setCam, fastForward, camera, scene, renderer };
+window.PTH = { get S() { return S; }, TR, trUpdate, trReset, trSlot, ribInLock, RIBC, ribPhys, streamBase, currentAt, updateLock, newGame, pickStart, RB, LKS, heightAt, waterBody, levelAt, tideCD, tideExtremes, lockWindow, nextLockTimes, callMarina, ribLines, ribEngine, ribSetDrill, solidAt, inChamber, lkP, LOCK, PD, cam, setCam, fastForward, camera, scene, renderer };
 requestAnimationFrame(frame);
 })();

@@ -321,7 +321,7 @@ function currentAt(x, y) {
 // sluices as the square root of the head (estimate: about five minutes for nine metres). On a tide of 12 m or more the
 // marina free-flows near HW: let down a little beforehand, both gates open once the tide reaches its level, and they stay
 // open while it rises (never above 14 m), then shut (Boatfolk, "Free-flow: when and why").
-const LKS = { M: 13.3, L: 13.3, gIn: 1, gOut: 0, mode: 'idle', want: 'in', step: 'open', stepT: 0, Q: 0, ff: false, ffDone: -1, hw: null, win: 0, sigIn: 'red', sigOut: 'red', note: '', lastCall: -99, ffSeen: false };
+const LKS = { hold: null, M: 13.3, L: 13.3, gIn: 1, gOut: 0, mode: 'idle', want: 'in', step: 'open', stepT: 0, Q: 0, ff: false, ffDone: -1, hw: null, win: 0, sigIn: 'red', sigOut: 'red', note: '', lastCall: -99, ffSeen: false };
 const GATE_T = 60, A_CH = (LOCK.sOut - LOCK.sIn) * LOCK.w, SLUICE = 0.7 * 4.2;
 function lockHW(ms) {
   // the high water whose window we are in or next come to
@@ -361,21 +361,60 @@ function updateLock(dt) {
     L.L = L.gOut > 0.98 ? L.M : L.L;
     L.Q = 0; setSignals(); return;
   }
-  // what the lock wants now: outside the window, the marina side (sea gates shut); in it, the cycle's side
-  const want = W.open && tide > LOCK.floor + 2.4 ? cycleWant(ms) : 'in';
-  // the state machine: close what is open, level, open the other
+  // what the lock wants now: outside the window, the marina side (sea gates shut); in it, the cycle's side, unless the
+  // keeper has closed early behind the RIB and is working her through (held to the end of the other side's next turn)
+  const working = W.open && tide > LOCK.floor + 2.4;
+  let want = working ? cycleWant(ms) : 'in';
+  if (L.hold) { if (!working || ms >= L.hold.until) L.hold = null; else want = L.hold.want; }
+  // the state machine: close what is open (never on a boat in the gates' swing), level (once she has her lines on, when
+  // the keeper is working her through), open the other
   L.Q = 0;
   if (want === 'in') {
-    if (L.gOut > 0) { L.gOut = approach(L.gOut, 0, dt / GATE_T); L.mode = 'gates'; }
-    else if (Math.abs(L.L - L.M) > 0.02) { levelTo(L.M, dt); L.mode = 'level'; }
+    if (L.gOut > 0) { if (!gateBusy('out')) L.gOut = approach(L.gOut, 0, dt / GATE_T); L.mode = 'gates'; }
+    else if (Math.abs(L.L - L.M) > 0.02) { if (waitLines(ms)) L.mode = 'lines'; else { levelTo(L.M, dt); L.mode = 'level'; } }
     else { L.L = L.M; L.gIn = approach(L.gIn, 1, dt / GATE_T); L.mode = L.gIn >= 1 ? 'inOpen' : 'gates'; }
   } else {
-    if (L.gIn > 0) { L.gIn = approach(L.gIn, 0, dt / GATE_T); L.mode = 'gates'; }
-    else if (Math.abs(L.L - tide) > 0.02) { levelTo(tide, dt); L.mode = 'level'; }
+    if (L.gIn > 0) { if (!gateBusy('in')) L.gIn = approach(L.gIn, 0, dt / GATE_T); L.mode = 'gates'; }
+    else if (Math.abs(L.L - tide) > 0.02) { if (waitLines(ms)) L.mode = 'lines'; else { levelTo(tide, dt); L.mode = 'level'; } }
     else { L.L = tide; L.gOut = approach(L.gOut, 1, dt / GATE_T); L.mode = L.gOut >= 1 ? 'outOpen' : 'gates'; }
   }
   if (L.gOut >= 1) L.L = tide;
   setSignals();
+  if (working) lockEarly(ms);
+}
+// The keeper does not wait for the clock when every boat booked on the locking is in. With the gates open on the RIB's
+// side, once she is wholly in the chamber (clear of both gates' swing, nearly stopped), having come in that way, and no
+// other boat is still to come in through those gates or still to leave by them, the gates close behind her. The chamber
+// is levelled once she has her lines on, and the far gates then stay open to the end of their next turn on the clock,
+// so the timetable picks up again.
+function ribInLock() {
+  const R = RB; if (!S || !inChamber(R.x, R.y)) return false;
+  const s = lkS(R.x, R.y); return s > LOCK.sIn + 4.2 && s < LOCK.sOut - 4.2 && Math.hypot(R.u, R.v) < 0.8;
+}
+function lockEarly(ms) {
+  const L = LKS; if (L.hold || (L.mode !== 'inOpen' && L.mode !== 'outOpen') || window.__quiet) return;
+  const side = L.mode === 'inOpen' ? 'in' : 'out';
+  if (RB.lockFrom !== (side === 'in' ? 'marina' : 'sea') || !ribInLock() || trPending(side)) return;
+  const next = side === 'in' ? 'out' : 'in'; let t = ms;
+  while (cycleWant(t) !== next) t += 60000;
+  while (cycleWant(t) === next) t += 60000;
+  L.hold = { want: next, until: t, linesBy: ms + 5 * 60000 };
+  const gates = side === 'in' ? 'marina' : 'sea', n = trInChamberCount();
+  say(n ? `RIB Patrol, Portishead Quays. That's everyone in: closing the ${gates} gates. Make fast and we'll level you.` : `RIB Patrol, Portishead Quays. You're our only boat this time: closing the ${gates} gates behind you. Make fast to the pontoon and we'll level you.`, 2);
+}
+// working the RIB through: the water is not moved until she is made fast (or five minutes have gone)
+function waitLines(ms) { const H = LKS.hold; return !!H && ms < H.linesBy && inChamber(RB.x, RB.y) && !RB.fast; }
+// a boat in a gate's swing (the leaves open out of the chamber into their recesses, sweeping 6.3 m outside the gate line):
+// the keeper will not close it on her, and asks the RIB to clear it
+function gateBusy(which) {
+  const s0 = which === 'in' ? LOCK.sIn : LOCK.sOut, out = which === 'in' ? -1 : 1;
+  const hit = (x, y, h) => { const c = lkC(x, y); if (c < LOCK.cNW - 1.5 || c > LOCK.cSE + 1.5) return false; const rel = (lkS(x, y) - s0) * out; return rel > -h - 0.3 && rel < LOCK.gateR + 0.8 + h; };
+  if (hit(RB.x, RB.y, 3.3)) {
+    const L = LKS, t = S ? S.t : 0; if (!(t - (L.busyLast ?? -99) < 2)) L.busyAt = t; L.busyLast = t;
+    if (t - L.busyAt > 15 && t - (L.busySaid ?? -99) > 60) { L.busySaid = t; say(`RIB Patrol, Portishead Quays. Clear the ${which === 'in' ? 'marina' : 'sea'} gates please, we're closing.`, 1); }
+    return true;
+  }
+  return trGateBusy(hit);
 }
 function levelTo(target, dt) {
   const L = LKS, dh = target - L.L, q = SLUICE * Math.sqrt(2 * 9.81 * Math.abs(dh)) * Math.sign(dh);   // m³/s

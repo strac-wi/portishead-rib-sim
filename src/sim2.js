@@ -74,15 +74,19 @@ function updateNav() {
     if (!NAV.on && !n.always) { if (!n.day || n.s.getWorldPosition(NV_P).distanceTo(NV_C) > 450) { n.s.visible = false; continue; } dayLit = true; }
     n.s.scale.setScalar(dayLit ? n.size * 0.6 : n.size);
     let on = true, col = null;
+    // whose light: the RIB's, another boat's (it carries its own place and heading), or a fixed or floating mark's
+    const V = n.who === 'rib' ? RB : n.who && typeof n.who === 'object' ? n.who : null;
     if (n.who === 'rib' && !(RIB.root && RIB.root.visible)) on = false;
+    if (V && V !== RB && !V.active) on = false;
     if (on && n.cond) on = n.cond();
     if (on && n.flash) on = n.flash(S ? S.t : 0);
-    if (on && n.who === 'rib') {
-      const hd = RB.psi, hx = Math.sin(hd), hy = Math.cos(hd);
+    if (on && V) {
+      const hd = V.psi, hx = Math.sin(hd), hy = Math.cos(hd);
       n.s.getWorldPosition(NV_P);
       const px = NV_P.x, py = -NV_P.z, vx = NV_C.x - px, vy = -NV_C.z - py, rel = Math.atan2(vx * hy - vy * hx, vx * hx + vy * hy) / DEG;
-      const lat = (px - RB.x) * hy - (py - RB.y) * hx;
+      const lat = (px - V.x) * hy - (py - V.y) * hx;
       if (n.kind === 'stern') on = Math.abs(rel) >= 112.5;
+      else if (n.kind === 'mast') on = Math.abs(rel) < 112.5;
       else if (n.kind === 'side') { const stbd = lat > 0; on = stbd ? rel > -1 && rel <= 112.5 : rel < 1 && rel >= -112.5; col = stbd ? 0x3dff6a : 0xff3b30; }
     }
     n.s.visible = on;

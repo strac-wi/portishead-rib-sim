@@ -92,6 +92,10 @@ function ribBoxes() {
     if (Math.abs(b.x - RB.x) > 30 || Math.abs(b.y - RB.y) > 30) continue;
     B.push({ cx: b.x, cy: b.y, ax: Math.sin(b.psi), ay: Math.cos(b.psi), hu: b.L / 2, hv: b.B / 2, name: 'a moored boat', boat: true });
   }
+  for (const b of TR.boats) {
+    if (!b.active || Math.abs(b.x - RB.x) > 30 || Math.abs(b.y - RB.y) > 30) continue;
+    B.push({ cx: b.x, cy: b.y, ax: Math.sin(b.psi), ay: Math.cos(b.psi), hu: b.L / 2 - 0.1, hv: b.B / 2, name: `the ${b.kind} ${b.name}`, boat: true });
+  }
   return B;
 }
 // ---------- physics ----------
@@ -358,7 +362,7 @@ function ribRules(dt) {
   const R = RB, w = waterBody(R.x, R.y), s = lkS(R.x, R.y), inCh = inChamber(R.x, R.y), sog = Math.hypot(R.u, R.v) / KN, D = R.drill;
   // entering on red
   if (inCh && !RULES.wasIn) {
-    const fromSea = s > LOCK.sOut - 6, sig = fromSea ? LKS.sigOut : LKS.sigIn;
+    const fromSea = s > LOCK.sOut - 6, sig = fromSea ? LKS.sigOut : LKS.sigIn; R.lockFrom = fromSea ? 'sea' : 'marina';
     if (sig !== 'go' && S.t - RULES.warnRed > 20) { RULES.warnRed = S.t; say(`Vessel in the lock, Portishead Quays Marina: you are entering on red. Stand off and wait for green-white-green.`, 1); ribPen('Entered the lock on red', 150); if (D.id === 'lock') D.reds++; }
   }
   RULES.wasIn = inCh;

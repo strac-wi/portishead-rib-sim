@@ -24,8 +24,11 @@ wall, and practise coming alongside a hammerhead and man overboard in a four-kno
 The tide is worked out on the device from the Avonmouth gauge's harmonic constants (TICON-4, CC BY 4.0), fitted to
 Portishead Marina's 2026 tide table (within about 15 cm and 10 minutes). The lock works 3.5 hours either side of high
 water at springs and 4 at neaps, lock-outs on the hour and half hour, lock-ins a quarter of an hour later, and
-free-flows near high water on tides of 12 m or more. The sill, the floor, the sluice rates, the channel's dredged depth
-and the stream rates are estimates. **Not for navigation.**
+free-flows near high water on tides of 12 m or more. The keeper does not wait for the clock once every boat booked on a
+locking is in: alone in the chamber, the gates close behind you and the chamber levels as soon as you are made fast.
+Yachts, motor cruisers and the odd fishing boat book onto about half the lockings, coming up the marina's fairway or in
+from the estuary, and give way to you. The sill, the floor, the sluice rates, the channel's dredged depth and the stream
+rates are estimates. **Not for navigation.**
 
 ## Sources
 

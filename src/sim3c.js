@@ -158,7 +158,7 @@ function updateRibUI() {
   const nxt = items.find(it => !it[1]); setT($('mNext'), nxt ? nxt[0] : title);
   lockUI();
 }
-const MODE_TXT = { inOpen: 'marina gates open', outOpen: 'sea gates open', gates: 'gates moving', level: 'levelling', ff: 'free-flow', idle: '' };
+const MODE_TXT = { inOpen: 'marina gates open', outOpen: 'sea gates open', gates: 'gates moving', level: 'levelling', lines: 'waiting for your lines', ff: 'free-flow', idle: '' };
 function lockUI() {
   const L = LKS, ms = S.ms, W = L.win, sig = (el, s) => { const I = $(el).children, c = s === 'go' ? ['g', 'w', 'g'] : ['r', 'r', 'r']; for (let i = 0; i < 3; i++) I[i].className = c[i]; };
   sig('sigIn', L.sigIn); sig('sigOut', L.sigOut);
@@ -170,6 +170,7 @@ function lockUI() {
     const N = nextLockTimes(ms);
     let t;
     if (L.mode === 'ff') t = `Free-flow until the tide turns (HW ${ukHHMM(W.hw.ms)} ${W.hw.h.toFixed(1)} m)`;
+    else if (L.hold) t = L.mode === 'lines' ? 'Gates shut behind you: make fast and the chamber levels' : `Working you through; the clock again from ${ukHHMM(L.hold.until)}`;
     else if (!W.open) t = `Shut. Opens ${ukHHMM(W.from)} (HW ${ukHHMM(W.hw.ms)}, ${W.hw.h.toFixed(1)} m) till ${ukHHMM(W.to)}`;
     else t = `Lock out ${N.out[0] ? ukHHMM(N.out[0]) : '—'} · lock in ${N.inn[0] ? ukHHMM(N.inn[0]) : '—'} · last ${ukHHMM(W.to)}`;
     setT($('lkNext'), t);
