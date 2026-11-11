@@ -392,4 +392,3 @@ function setSignals() {
 }
 // the water level at a point, and how rough it is there (the marina and lock are sheltered)
 function levelAt(x, y) { const w = waterBody(x, y); return w === 'marina' ? LKS.M : w === 'lock' ? LKS.L : S.tide; }
-function seaAt(x, y) { const w = waterBody(x, y); if (w !== 'sea') return 0.03; const s = lkS(x, y), c = lkC(x, y); return s < APPROACH.s1 + 20 && c > APPROACH.cNW - 3 && c < APPROACH.cSE + 3 ? 0.15 : 1; }

@@ -28,7 +28,7 @@ const V3 = THREE.Vector3;
 const LIGHTS = {
   day:   { exp: 1, hemi: [0xd6e2ea, 0x3e4a35, 0.72], sun: [0xffedd0, 0.95], dir: [-3000, 4200, 2600], hor: 0xb7c4cc, top: 0x7393ab, glow: [1, 0.88, 0.68], cloud: [1, 1, 1], spec: [0.7, 0.66, 0.6] },
   dusk:  { exp: 0.62, hemi: [0x9aa0c0, 0x2e2a28, 0.75], sun: [0xff8a50, 0.45], dir: [-0.93, 0.03, 0.34], hor: 0xe0a27a, top: 0x41587e, glow: [1.6, 0.75, 0.35], cloud: [0.95, 0.66, 0.6], spec: [1.2, 0.6, 0.3] },
-  night: { exp: 0.42, hemi: [0x4a5c80, 0x0b0d10, 0.75], sun: [0xb4c4e6, 0.7], dir: [0.45, 0.55, 0.62], hor: 0x2a3a58, top: 0x0b1428, glow: [2.4, 2.5, 2.7], cloud: [0.22, 0.25, 0.32], spec: [1.4, 1.5, 1.7] },
+  night: { exp: 0.42, sheen: 0.16, hemi: [0x5a6c92, 0x0d1014, 0.95], sun: [0xb4c4e6, 0.7], dir: [0.45, 0.55, 0.62], hor: 0x2a3a58, top: 0x0b1428, glow: [2.4, 2.5, 2.7], cloud: [0.22, 0.25, 0.32], spec: [1.4, 1.5, 1.7] },
 };
 const NAV = { list: [], on: false, tex: (() => {
   const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -44,7 +44,7 @@ function setLight(mode) {
   sun.color.setHex(L.sun[0]); sun.intensity = L.sun[1]; SUN_DIR.set(...L.dir).normalize();
   SKY.setHex(L.hor); SKY_TOP.setHex(L.top); scene.fog.color.setHex(L.hor);
   const su = scene.userData.sky.material.uniforms; su.uGlow.value.setRGB(...L.glow); su.uCloudCol.value.setRGB(...L.cloud);
-  WATER_SPEC.setRGB(...L.spec);
+  WATER_SPEC.setRGB(...L.spec); WATER_SHEEN.value = L.sheen || 0;
   NAV.on = mode !== 'day';
   if (!NAV.on) for (const n of NAV.list) n.s.visible = n.always === true;
   if (NAV.lamps) NAV.lamps.forEach(m => { m.visible = NAV.on; });
@@ -186,6 +186,18 @@ function groundTexture() {
 // and the pier are cut out and built as walls. Colour by height: the town's grass above the sea wall, shingle and rock at
 // the point, the grey-brown Severn mud from the waterline up, the saltmarsh at the top of the flats towards Portbury.
 const TERRAIN = { meshes: [] };
+// The water is opaque, so seabed that the lowest tide and the deepest trough can never bare is not drawn: a quad this far
+// below chart datum at every corner is left out of the meshes. Ground below the deepest trough the sea can make just now
+// is under the water too: dropped before it is shaded (the water is drawn after it).
+const SEABED_CUT = -2.5, SEA_CUT = { value: -99 };
+function seaCutMat(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uSeaCut = SEA_CUT;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vWY;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWY; uniform float uSeaCut;').replace('void main() {', 'void main() {\n  if (vWY < uSeaCut) discard;');
+  };
+  return m;
+}
 const INNER = { x0: -720, y0: -620, x1: 620, y1: 760, step: Math.min(innerWidth, innerHeight) < 700 ? 8 : 5 };
 function groundCol(x, y, z, slope) {
   const n = fbm(x * 0.02, y * 0.02), n2 = vnoise(x * 0.12, y * 0.12);
@@ -226,6 +238,7 @@ function buildTerrainMesh(x0, y0, x1, y1, step, cut, mat, skip) {
     const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1, cx = x0 + (i + 0.5) * step, cy = y0 + (j + 0.5) * step;
     if (skip && skip(cx, cy)) continue;
     if (cutV && (cutV[a] | cutV[b] | cutV[c] | cutV[d])) continue;
+    if (Math.max(H[a], H[b], H[c], H[d]) < SEABED_CUT) continue;
     idx.push(a, b, c, b, d, c);
   }
   const g = new THREE.BufferGeometry();
@@ -267,17 +280,18 @@ function buildPatch(mat) {
   for (let j = 0; j < nc - 1; j++) for (let i = 0; i < ns - 1; i++) {
     const a = j * ns + i, b = a + 1, c = a + ns, d = c + 1;
     if (cutV[a] | cutV[b] | cutV[c] | cutV[d]) continue;
+    if (Math.max(H[a], H[b], H[c], H[d]) < SEABED_CUT) continue;
     if (inApproach(P.s0 + (i + 0.5) * P.ds, P.c0 + (j + 0.5) * P.dc)) continue;   // the approach has its own floor and walls
     idx.push(a, c, b, b, c, d);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(colA, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   g.setIndex(idx); g.computeVertexNormals();
-  const pm = mat.clone(); pm.polygonOffset = true; pm.polygonOffsetFactor = -1; pm.polygonOffsetUnits = -2;
+  const pm = seaCutMat(mat.clone()); pm.polygonOffset = true; pm.polygonOffsetFactor = -1; pm.polygonOffsetUnits = -2;
   const m = new THREE.Mesh(g, pm); m.receiveShadow = true; scene.add(m); TERRAIN.meshes.push(m); return m;
 }
 function buildTerrain() {
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTexture() });
+  const mat = seaCutMat(new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTexture() }));
   const cut = (x, y) => inDock(x, y) || inPier(x, y);
   buildPatch(mat);
   buildTerrainMesh(INNER.x0, INNER.y0, INNER.x1, INNER.y1, INNER.step, cut, mat, (x, y) => inPatch(x, y, 4));
@@ -428,9 +442,9 @@ function buildMarina() {
     gw.rotation.order = 'YXZ'; gw.rotation.y = Math.atan2(dx, -dy); scene.add(gw); MAR.gangway = gw;
   }
   // water: the marina's and the chamber's, each a flat sheet at its own level
-  MAR.water = new THREE.Mesh(shapeGeo(MARINA_POLY, 0), basinWaterMat); scene.add(MAR.water);
+  MAR.water = new THREE.Mesh(shapeGeo(MARINA_POLY, 0), basinWaterMat); MAR.water.renderOrder = 1; scene.add(MAR.water);
   const chW = [lkP(LOCK.sIn - 3, LOCK.cNW - 1), lkP(LOCK.sOut + 0.5, LOCK.cNW - 1), lkP(LOCK.sOut + 0.5, LOCK.cSE + 1), lkP(LOCK.sIn - 3, LOCK.cSE + 1)];
-  MAR.lockMat = waterMaterial(0, true); MAR.lockWater = new THREE.Mesh(shapeGeo(chW, 0), MAR.lockMat); scene.add(MAR.lockWater); MAR.mud = 0;
+  MAR.lockMat = waterMaterial(0, true); MAR.lockWater = new THREE.Mesh(shapeGeo(chW, 0), MAR.lockMat); MAR.lockWater.renderOrder = 1; scene.add(MAR.lockWater); MAR.mud = 0;
   buildGates(); buildSignals(); buildBoats();
 }
 // The lock's floating pontoons: one along each wall, riding up and down on steel guide rails as the chamber fills and
@@ -486,7 +500,7 @@ function updateMarina() {
   if (MAR.lockPont) MAR.lockPont.position.y = LKS.L;
   MAR.pont.position.y = LKS.M; MAR.water.position.y = LKS.M; MAR.lockWater.position.y = LKS.L;
   { const u = MAR.lockMat.uniforms, dt = 0.016 * (S ? S.warp : 1); const seaIn = LKS.gOut > 0.02; WATER_U.uMaskS.value = seaIn ? LOCK.sIn + 1 : 1e5; MAR.lockWater.visible = !seaIn; MAR.mud = seaIn ? 1 : Math.max(0, MAR.mud - dt / 900);
-    u.uDeep.value.setHex(0x2b3a2d).lerp(new THREE.Color(0x6e5b3c), MAR.mud); u.uShallow.value.setHex(0x3c4a3a).lerp(new THREE.Color(0x8c7653), MAR.mud);
+    u.uDeep.value.setHex(0x2b3a2d).lerp(new THREE.Color(SEA_DEEP), MAR.mud); u.uShallow.value.setHex(0x3c4a3a).lerp(new THREE.Color(SEA_SHALLOW), MAR.mud);
     for (const k of ['uTime', 'uRip']) u[k].value = basinWaterMat.uniforms[k].value; }
   const G = MAR.gangway, { foot, top, L } = G.userData, dz = QUAY - (LKS.M + 0.55);
   G.position.set((foot[0] + top[0]) / 2, (LKS.M + 0.55 + QUAY) / 2, -(foot[1] + top[1]) / 2); G.rotation.x = -Math.atan2(dz, L);

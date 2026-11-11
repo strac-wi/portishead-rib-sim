@@ -11,8 +11,10 @@
 // faster). About 1,150 kg all up with two aboard and fuel: sellers' claims of about 38 kn will be lighter boats.
 const RIBC = { m: 1150, L: 6.54, B: 2.49, xe: -3.15, gr: 2.14, D: 0.375, P: 0.406, kJ: 1.542, kq0: 0.105, rho: 1025, idle: 700, limit: 6300, Je: 0.24, Alu: 0.04, Al: 4.2, Af: 2.7,
   // hull in sway and yaw: linear lift of the V (N per m/s per m/s), where it acts (m forward of the pivot, at rest and on
-  // the plane), cross-flow drag coefficient on the strips below, linear yaw damping, and the share of the Munk moment
-  yv0: 300, yv1: 400, xl0: 0.2, xl1: -0.2, cd: 0.6, nr0: 150, nr1: 400, munk: 0.5 };
+  // the plane); cross-flow drag coefficient on the strips below, off the plane (the V slides, so the stern swings out
+  // under the leg's push) and on it (the chines and strakes bite); linear yaw damping (at rest, and growing with speed);
+  // and the share of the Munk moment
+  yv0: 300, yv1: 400, xl0: 0.2, xl1: -0.2, cd: 0.22, cd1: 0.6, nr0: 1000, nr1: 400, munk: 0.5 };
 // the lateral plane in strips, [x forward of the pivot, depth]: at rest she sits by the stern on her deep-V, the leg and
 // the after ends of the tubes in the water and the forefoot barely wet, so most of the grip is aft; on the plane only the
 // after third is wet
@@ -37,7 +39,18 @@ const WEATHER = {
   calm:     { label: 'Calm', wind: 6, from: 220, gust: 0.15, wave: 0.06, vis: 14000 },
   moderate: { label: 'Moderate SW', wind: 16, from: 225, gust: 0.25, wave: 0.22, vis: 12000 },
   fresh:    { label: 'Fresh W', wind: 26, from: 255, gust: 0.35, wave: 0.42, vis: 9000 },
+  custom:   { label: 'Your own', wind: 13.5, from: 225, gust: 0.24, wave: 0.17, vis: 12500 },
 };
+// Your own wind: a Beaufort force (its mean speed in knots, the middle of the force's band) from any of sixteen points.
+// The rest follows from the speed on the lines the set weathers lie on: gustier, a bigger swell up the channel and
+// thicker air the harder it blows. The chop, its lee and the white horses are worked out from the wind itself, as ever;
+// the stream is the tide's.
+const BEAUFORT = [['Calm', 0.5], ['Light air', 2], ['Light breeze', 5], ['Gentle breeze', 8.5], ['Moderate breeze', 13.5], ['Fresh breeze', 19], ['Strong breeze', 24.5], ['Near gale', 30.5], ['Gale', 37]];
+const POINTS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+function customWeather(bft, pt) {
+  const kn = BEAUFORT[bft][1];
+  return Object.assign(WEATHER.custom, { label: `Force ${bft} ${POINTS[pt]}`, wind: kn, from: pt * 22.5, gust: 0.1 + 0.035 * bft, wave: clamp(0.02 * kn - 0.1, 0.02, 0.65), vis: clamp(16000 - 260 * kn, 6000, 16000) });
+}
 // Wind chop: fetch-limited (JONSWAP) height and period from the wind over the estuary's fetch (about 12 km from the west
 // down the Bristol Channel's upper reach); six trains spread about the downwind direction. The hull feels each through a
 // factor for her length (she bridges what is short against her).
@@ -47,6 +60,7 @@ function chopSea() {
   const P = [[-40, 1.25, 0.6], [-18, 1.0, 1.0], [-4, 0.82, 0.9], [9, 1.12, 0.85], [24, 0.68, 0.65], [40, 0.55, 0.45]];
   const sw = Math.sqrt(P.reduce((t, q) => t + q[2] * q[2], 0) / 2), sig = 0.3 * Hs;
   const C = P.map(([deg, lf, wt], i) => { const l = L * lf, b = to + deg * DEG; return { k: 2 * Math.PI / l, w: Math.sqrt(g * 2 * Math.PI / l), a: sig * wt / sw, hull: l / (l + RIBC.L), dx: Math.sin(b), dy: Math.cos(b), ph: i * 1.7 }; });
+  seaShelter(to);
   return Object.assign(C, { Hs, L, sig, to, resist: Hs * (L / (L + RIBC.L) + 0.7 * L / (0.7 * L + RIBC.L)) });
 }
 function chopH(x, y, t) { const C = S.chop || (S.chop = chopSea()); let h = 0; for (let i = 0; i < C.length; i++) { const c = C[i]; h += c.a * c.hull * Math.sin(c.k * (c.dx * x + c.dy * y) - c.w * t + c.ph); } return h; }
@@ -119,19 +133,20 @@ function ribPhys(dt) {
   // cross-flow drag strip by strip, each at its own sideways speed (v + x r): in a turn the stern sweeps out and is
   // pushed back, which is what stops a deep-V hull yawing once the drive comes off
   for (const [xs, ds] of HULL_ST) {
-    const wet = 1 - p * smooth(-2.2, -0.6, xs) * 0.9, wS = 0.5 * C.rho * C.cd * ds * 0.8 * wet * (1 - 0.5 * p), vl = vr + xs * R.r, F = -wS * vl * Math.abs(vl);
+    const wet = 1 - p * smooth(-2.2, -0.6, xs) * 0.9, wS = 0.5 * C.rho * (C.cd + (C.cd1 - C.cd) * p) * ds * 0.8 * wet * (1 - 0.5 * p), vl = vr + xs * R.r, F = -wS * vl * Math.abs(vl);
     Y += F; N += xs * F;
   }
   N += -(C.nr0 + C.nr1 * U) * R.r - C.munk * (my - mx) * ur * vr;
   X -= 0.06 * C.m * Math.abs(R.r) * Math.abs(ur);
   // in a seaway: heave and pitch on springs and dampers at the forefoot and the transom, riding the swell and the chop
   {
-    const PT = [1.8, -2.3], kk = 22600 * (1 + 2 * p), cc = 2340 * (1 + p), Iy = C.m * 3.8, t = S.t, sea = R._sea;
+    // the lee of the land, the lock's walls and the shallows quieten the water under her, as they do the water drawn
+    const PT = [1.8, -2.3], kk = 22600 * (1 + 2 * p), cc = 2340 * (1 + p), Iy = C.m * 3.8, t = S.t, SK = R._sk, sea = SK.sh * Math.max(SK.ch, SK.sw);
     const shareB = Math.max(0.14, 0.45 - 0.25 * p - 0.01 * p * R.trim);
     let Fz = 0, My = 0, immS = 1;
     for (let i = 0; i < 2; i++) {
       const xb = PT[i]; let eta = 0;
-      if (sea > 0.01) { for (const du of [-1.4, 0, 1.4]) for (const dv of [-0.9, 0.9]) { const a = xb + du, wx = R.x + a * sp + dv * cp, wy = R.y + a * cp - dv * sp; eta += waveH(wx, -wy, t) + chopH(wx, wy, t); } eta = eta / 6 * sea; }
+      if (sea > 0.01) { for (const du of [-1.4, 0, 1.4]) for (const dv of [-0.9, 0.9]) { const a = xb + du, wx = R.x + a * sp + dv * cp, wy = R.y + a * cp - dv * sp; eta += waveH(wx, -wy, t) * SK.sw + chopH(wx, wy, t) * SK.ch; } eta *= SK.sh / 6; }
       const prev = R.eta[i] === null ? eta : R.eta[i]; R.eta[i] = eta;
       const rel = (eta - prev) / dt - (R.hw + xb * R.q), s0 = (i ? 1 - shareB : shareB) * C.m * g / kk, imm = s0 + eta - (R.hz + xb * R.th);
       if (imm > 0 && R.airT[i] > 0.2 && rel > 1.2) { R.slamV = Math.max(R.slamV, rel); R.slamN++; R.slamT = S.t; R.u -= Math.sign(R.u) * 0.07 * rel * p * Math.min(1, Math.abs(R.u) / 8); }
@@ -143,7 +158,7 @@ function ribPhys(dt) {
     R.air += ((immS < -0.03 ? 1 : 0) - R.air) * Math.min(1, dt * 25);
     R.gz += (1 + Fz / (C.m * g) - R.gz) * Math.min(1, dt * 18); R.gPeak = Math.max(R.gPeak - dt * 2, R.gz);
     R.flyT = R.airT[0] > 0 && R.airT[1] > 0 ? R.flyT + dt : 0;
-    const Hs = (S.chop || (S.chop = chopSea())).resist * sea;
+    const Hs = (S.chop || (S.chop = chopSea())).resist * SK.ch * SK.sh;
     X -= Math.sign(ur) * W * 6 * (Hs / C.L) ** 2 * smooth(3, 15, Math.abs(ur));
   }
   const _X0 = X;

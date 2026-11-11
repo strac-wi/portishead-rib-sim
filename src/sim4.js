@@ -197,8 +197,18 @@ function buildLabels() {
   }
 }
 let namesOn = true;
+// names fade out with distance, and where two would lie over one another on the screen the nearer place keeps its name
+const _lv = new THREE.Vector3(), _lk = [];
 function fadeLabels() {
-  for (const s of LABELS) { const d = camera.position.distanceTo(s.position); s.visible = namesOn && d < 6000; s.material.opacity = namesOn ? clamp(1 - (d - 3500) / 2500, 0, 1) * clamp((d - 60) / 140, 0, 1) : 0; }
+  for (const s of LABELS) { const d = camera.position.distanceTo(s.position); s.userData.d = d; s.visible = namesOn && d < 6000; s.material.opacity = namesOn ? clamp(1 - (d - 3500) / 2500, 0, 1) * clamp((d - 60) / 140, 0, 1) : 0; }
+  if (!namesOn) return;
+  const P = camera.projectionMatrix.elements[5]; _lk.length = 0;
+  for (const s of LABELS.slice().sort((a, b) => a.userData.d - b.userData.d)) {
+    if (!s.visible || s.material.opacity < 0.01) continue;
+    _lv.copy(s.position).project(camera); if (_lv.z > 1) continue;
+    const hx = 0.5 * s.scale.x * P / camera.aspect, hy = 0.5 * s.scale.y * P;
+    if (_lk.some(k => Math.abs(k[0] - _lv.x) < k[2] + hx && Math.abs(k[1] - _lv.y) < k[3] + hy)) s.visible = false; else _lk.push([_lv.x, _lv.y, hx, hy]);
+  }
 }
 
 // ================= INPUT =================
@@ -266,6 +276,12 @@ $('rEng').onclick = () => { initAudio(); ribEngine(); }; $('rKill').onclick = ri
 $('rDrill').onclick = () => ribSetDrill(DRILLS[(DRILLS.indexOf(RB.drill.id) + 1) % DRILLS.length]);
 document.querySelector('#ribHud .rg').addEventListener('click', () => { if (PHONE.matches) ribFold(!document.body.classList.contains('ribfold')); });
 $('bVhf').onclick = callMarina; $('bVhf2').onclick = callMarina;
+// the lock panel folds to a strip on a phone, so it does not stand in the view; tapping its heading opens it (remembered)
+const LOCKF = { open: !!PREFS.lockOpen };
+function lockFold() { const f = SHORT.matches, P = $('lockP'); P.classList.toggle('foldable', f); P.classList.toggle('compact', f && !LOCKF.open); }
+$('lockP').querySelector('h3').addEventListener('click', () => { if (!SHORT.matches) return; LOCKF.open = !LOCKF.open; savePrefs({ lockOpen: LOCKF.open }); lockFold(); });
+if (SHORT.addEventListener) SHORT.addEventListener('change', lockFold); else SHORT.addListener(lockFold);
+lockFold();
 const WARPS = [1, 2, 5, 10, 20];
 function cycleWarp() { S.warp = WARPS[(WARPS.indexOf(S.warp) + 1) % WARPS.length]; setT($('bWarp'), `Time ×${S.warp}`); setT($('tWarp'), `×${S.warp}`); setC($('tWarp'), 'on', S.warp > 1); toast(S.warp > 1 ? `Time ×${S.warp}` : 'Time ×1: real time'); }
 $('bWarp').onclick = cycleWarp;
@@ -377,6 +393,7 @@ function newGame() {
   const val = (n) => (document.querySelector(`input[name=${n}]:checked`) || {}).value;
   const tideK = val('tide') || 'window', light = val('light') || 'day', wxK = val('wx') || 'calm';
   savePrefs({ tide: tideK, light, wx: wxK });
+  if (wxK === 'custom') customWeather(+$('wxBft').value, +$('wxDir').value);
   const ms0 = pickStart(tideK);
   S = { ms0, t: 0, ms: ms0, tide: tideCD(ms0), wx: WEATHER[wxK], wxKey: wxK, warp: 1, running: true, chop: null, horn: false, wind: { x: 0, y: 0, spd: 0, from: 220 }, ext: tideExtremes(ms0 - 7 * 3600e3, ms0 + 40 * 3600e3) };
   updateEnv(0);
@@ -390,7 +407,7 @@ function newGame() {
     return { x: a[0] + ux * 3.75 + nx * sd * off, y: a[1] + uy * 3.75 + ny * sd * off, psi: Math.atan2(-ux, -uy) }; })();
   S.chop = null; Object.assign(RB, { hz: 0, hw: 0, th: 0, q: 0, hzv: 0, thv: 0, eta: [null, null], airT: [0, 0], air: 0, gz: 1, gPeak: 1, flyT: 0, slamV: 0 });
   Object.assign(RB, { x: st.x, y: st.y, psi: st.psi, u: 0, v: 0, r: 0, rpm: 0, lever: 0, wheel: 0, trim: 0, eng: 'off', kill: true, vent: 0, fast: true, fastAt: 'berth', pose: { x: st.x, y: st.y, psi: st.psi }, gear: 0, contactMax: 0, cas: null, lv: LKS.M });
-  RB._boxes = []; RB._cur = { x: 0, y: 0 }; RB._sea = 0.03; RB._shel = 0.7;
+  RB._boxes = []; RB._cur = { x: 0, y: 0 }; RB._sk = { ch: 0, sw: 0, sh: 0 }; RB._shel = 0.7;
   { const A = ribAlongside(); RB.fastPts = fastPoints(A ? A.side : 1); }
   RIB.root.visible = true;
   ribSetDrill('free');
@@ -405,6 +422,15 @@ say = function (text, prio) { if (window.__quiet) return; sayLoud(text, prio); }
 $('bGo').onclick = () => { $('menu').hidden = true; initAudio(); newGame(); };
 // the start screen remembers the last choices
 for (const [n, v] of Object.entries({ tide: PREFS.tide, light: PREFS.light, wx: PREFS.wx })) { if (!v) continue; const el = document.querySelector(`input[name=${n}][value=${v}]`); if (el) el.checked = true; }
+// your own wind: the force and the point it blows from, kept between games
+{
+  const B = $('wxBft'), D = $('wxDir');
+  BEAUFORT.forEach(([nm], i) => B.add(new Option(`${i} · ${nm}`, i))); POINTS.forEach((nm, i) => D.add(new Option(nm, i)));
+  B.value = clamp(PREFS.bft === undefined ? 4 : +PREFS.bft, 0, 8); D.value = clamp(PREFS.wpt === undefined ? 10 : +PREFS.wpt, 0, 15);
+  const sync = (pick) => { const W = customWeather(+B.value, +D.value); setT($('wxNote'), `${W.wind} kn mean, ${POINTS[+D.value]} is ${fmt3(W.from)}°`); savePrefs({ bft: +B.value, wpt: +D.value });
+    if (pick) document.querySelector('input[name=wx][value=custom]').checked = true; };
+  B.onchange = D.onchange = () => sync(true); sync(false);
+}
 
 // ================= CAMERA & RENDER =================
 function resize() {
@@ -413,7 +439,7 @@ function resize() {
   camera.aspect = Math.max(1, r.width) / Math.max(1, r.height); camera.updateProjectionMatrix();
 }
 new ResizeObserver(resize).observe($('view'));
-let last = performance.now(), uiAcc = 0, mapAcc = 0;
+let last = performance.now(), uiAcc = 0, mapAcc = 0; const _dbs = new THREE.Vector2();
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = (now - last) / 1000, rdt = clamp(raw, 0, 0.05); last = now;
@@ -426,10 +452,12 @@ function frame(now) {
     ribUpdate(sdt); updateRibVisuals(sdt); updateWake();
   }
   updateTouch(); updateCamera(); updateMarina(); updateMarks(); if (S.running) updateFlowFoam(Math.min(rdt * S.warp, 0.25));
-  const sx = Math.round(camera.position.x / WATER_CELL) * WATER_CELL, sz = Math.round(camera.position.z / WATER_CELL) * WATER_CELL;
+  const [sx, sz] = waterCentre();
   waterNear.position.set(sx, S.tide, sz); waterFar.position.set(sx, S.tide, sz); waterOrigin(sx, sz, S.t); updateWaterFlow(sx, sz);
-  for (const m of [waterNearMat, waterFarMat, basinWaterMat]) { m.uniforms.uTime.value = S.t; m.uniforms.uTide.value = S.tide; m.uniforms.uRip.value = 0.035 + 0.008 * S.wind.spd; }
-  waterNearMat.uniforms.uAmp.value = S.wx.wave; basinWaterMat.uniforms.uRip.value = 0.02 + 0.004 * S.wind.spd;
+  for (const m of [waterNearMat, waterFarMat, basinWaterMat]) { m.uniforms.uTime.value = S.t; m.uniforms.uRip.value = 0.035 + 0.008 * S.wind.spd; }
+  SEA_TIDE.value = S.tide; SEA_AMP.value = S.wx.wave; basinWaterMat.uniforms.uRip.value = 0.02 + 0.004 * S.wind.spd;
+  SEA_CUT.value = S.tide - seaTrough() - 0.25;
+  { const H = renderer.getDrawingBufferSize(_dbs).y; foam.pts.material.uniforms.uH.value = H; FLOWF.pts.material.uniforms.uH.value = H; }
   sun.target.position.set(RB.x, RB.lv, -RB.y); sun.position.copy(sun.target.position).addScaledVector(SUN_DIR, 300);
   scene.userData.sky.position.copy(camera.position); scene.userData.sky.material.uniforms.uOff.value.set(S.t * 0.0006, S.t * 0.0002);
   renderView();
@@ -451,7 +479,7 @@ RIB.root.visible = false;
 setLight('day'); setTouch(TOUCH.on); resize();
 // a world before a game starts: the marina at its level, the tide as it is now
 LKS.M = 13.3; LKS.L = 13.3;
-{ const n = Date.now(); S = null; MAR.water.position.y = 13.3; MAR.pont.position.y = 13.3; MAR.boats.position.y = 13.3; MAR.lockWater.position.y = 13.3; waterNear.position.y = waterFar.position.y = tideCD(n); for (const m of [waterNearMat, waterFarMat]) m.uniforms.uTide.value = tideCD(n); }
+{ const n = Date.now(); S = null; MAR.water.position.y = 13.3; MAR.pont.position.y = 13.3; MAR.boats.position.y = 13.3; MAR.lockWater.position.y = 13.3; waterNear.position.y = waterFar.position.y = tideCD(n); SEA_TIDE.value = tideCD(n); }
 window.PTH = { get S() { return S; }, RIBC, ribPhys, streamBase, currentAt, updateLock, newGame, pickStart, RB, LKS, heightAt, waterBody, levelAt, tideCD, tideExtremes, lockWindow, nextLockTimes, callMarina, ribLines, ribEngine, ribSetDrill, solidAt, inChamber, lkP, LOCK, PD, cam, setCam, fastForward, camera, scene, renderer };
 requestAnimationFrame(frame);
 })();

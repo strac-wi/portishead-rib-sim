@@ -79,6 +79,14 @@ output{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .sig i.r{background:#ff3b30;box-shadow:0 0 6px #ff3b30}.sig i.g{background:#3dff6a;box-shadow:0 0 6px #3dff6a}.sig i.w{background:#fff;box-shadow:0 0 6px #fff}
 .lsig small{display:block;font-size:11px;color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
 .lsig b{font-size:13px;font-weight:600}
+/* on a phone the lock folds to a strip: its two signals and the radio (tap the heading for the rest) */
+.lockp.foldable h3{cursor:pointer;-webkit-user-select:none;user-select:none} .lockp.foldable h3::after{content:'\25BE';color:var(--dim)}
+.lockp.compact{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;width:auto;max-width:232px;padding:4px 7px}
+.lockp.compact h3{width:100%;margin:0;font-size:11px;white-space:nowrap} .lockp.compact h3::after{content:'\25B8'}
+.lockp.compact .lsig{margin:0;gap:5px} .lockp.compact .lsig>div:not(.sig),.lockp.compact .lvl,.lockp.compact .lnext,.lockp.compact #vhfLog,.lockp.compact .lfull{display:none}
+.lockp.compact .sig{flex-direction:row;align-items:center;gap:2px;padding:2px 4px} .lockp.compact .sig i{width:7px;height:7px}
+.lockp.compact .sig::before{content:attr(data-k);font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--dim);margin-right:3px}
+.lockp.compact #bVhf2{margin-left:auto;padding:2px 7px;font-size:10px}
 .lvl{display:grid;grid-template-columns:repeat(3,1fr);gap:2px 6px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
 .lvl output{font-size:13px;color:var(--ink);text-transform:none;letter-spacing:0}
 .lnext{font-size:13px;margin:5px 0 6px;line-height:1.25}
@@ -104,12 +112,19 @@ legend{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--
 fieldset label{display:flex;gap:8px;align-items:flex-start;font-size:16px;line-height:1.25;cursor:pointer}
 fieldset label small{display:block;color:var(--dim);font-size:13px}
 fieldset input{accent-color:var(--amber);margin-top:3px}
+fieldset select{font:inherit;color:var(--ink);background:#1b2a31;border:1px solid var(--line-hi);border-radius:3px;padding:1px 3px;margin:2px 0}
 .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:15px;margin:6px 0 4px}
 .keys kbd{font-family:var(--f-mono);font-size:12px;background:#1b2a31;border:1px solid var(--line-hi);border-radius:3px;padding:1px 5px;white-space:nowrap;justify-self:start}
 .help ol,.help ul{margin:0 0 6px;padding-left:20px;font-size:16px;line-height:1.4}
 #ribHud{position:absolute;left:max(16px,env(safe-area-inset-left,0px));bottom:16px;z-index:3;padding:8px 10px;width:300px;box-sizing:border-box;pointer-events:auto}
 @media (min-width:701px){body.touchon #ribHud{bottom:calc(max(14px,env(safe-area-inset-bottom,0px)) + var(--levH) + 18px)}}
+/* a phone on its side has no room above the lever: the panel sits beside it */
+@media (min-width:701px) and (max-height:560px){body.touchon #ribHud{bottom:max(14px,env(safe-area-inset-bottom,0px));left:calc(max(16px,env(safe-area-inset-left,0px)) + 112px);width:196px;padding:6px 8px}
+  body.touchon .rlev,body.touchon .rtrim,body.touchon #rTrimUp,body.touchon #rTrimDn{display:none} body.touchon .rvent:empty{display:none}
+  body.touchon .rg{margin:0 0 5px;gap:6px} body.touchon #rGear{font-size:18px;width:auto;line-height:1} body.touchon .rcol{flex-direction:row;align-items:baseline;gap:6px;font-size:12px}
+  body.touchon .trow{gap:5px} body.touchon .trow button{padding:6px 8px}
+  body.touchon #lockP.compact{position:absolute;right:calc(100% + 8px);top:36px}}
 .rg{display:flex;align-items:center;gap:10px;margin-bottom:8px}
 .rlev{position:relative;width:12px;height:52px;border:1px solid var(--line-hi);border-radius:3px;background:rgba(0,0,0,.25)}
 .rlev::after{content:'';position:absolute;left:-3px;right:-3px;top:50%;height:1px;background:var(--line-hi)}
@@ -227,14 +242,14 @@ fieldset input{accent-color:var(--amber);margin-top:3px}
     <div class="hud" id="hudR">
       <div class="chart"><canvas id="map" width="460" height="460" aria-label="Chart: tap to expand" title="Click to open the full chart"></canvas><button id="bMapZoom">Approaches</button></div>
       <div class="lockp" id="lockP">
-        <h3>Lock <span id="lkState">-</span></h3>
+        <h3 title="Tap for the lock's details">Lock <span id="lkState">-</span></h3>
         <div class="lsig">
-          <div class="sig" id="sigIn" title="Marina side"><i></i><i></i><i></i></div><div><small>Marina side</small><b id="lkIn">-</b></div>
-          <div class="sig" id="sigOut" title="Sea side"><i></i><i></i><i></i></div><div><small>Sea side</small><b id="lkOut">-</b></div>
+          <div class="sig" id="sigIn" data-k="Marina" title="Marina side"><i></i><i></i><i></i></div><div><small>Marina side</small><b id="lkIn">-</b></div>
+          <div class="sig" id="sigOut" data-k="Sea" title="Sea side"><i></i><i></i><i></i></div><div><small>Sea side</small><b id="lkOut">-</b></div>
         </div>
         <div class="lvl"><span>Marina<br><output id="lvM">-</output></span><span>Chamber<br><output id="lvL">-</output></span><span>Sea<br><output id="lvS">-</output></span></div>
         <p class="lnext" id="lkNext">-</p>
-        <button id="bVhf2" class="go">Call marina · VHF 80</button>
+        <button id="bVhf2" class="go"><span class="lfull">Call marina · </span>VHF 80</button>
         <ul id="vhfLog" aria-live="polite"></ul>
       </div>
       <div class="check"><h3 id="ckTitle">Checklist</h3><ul id="ckList"></ul></div>
@@ -300,6 +315,7 @@ fieldset input{accent-color:var(--amber);margin-top:3px}
             <label><input type="radio" name="wx" value="calm" checked><span>Calm<small>Light airs.</small></span></label>
             <label><input type="radio" name="wx" value="moderate"><span>Moderate south-westerly<small>16 kn, wind against tide on the ebb.</small></span></label>
             <label><input type="radio" name="wx" value="fresh"><span>Fresh westerly<small>26 kn gusting: a short steep sea off the point.</small></span></label>
+            <label><input type="radio" name="wx" value="custom"><span>Your own<small>Force <select id="wxBft" aria-label="Beaufort force"></select> from the <select id="wxDir" aria-label="Wind direction"></select><br><i id="wxNote"></i></small></span></label>
           </fieldset>
         </div>
         <div class="row"><button id="bGo" class="go">Start</button><button id="bHelp2">How it works</button></div>
@@ -312,7 +328,7 @@ fieldset input{accent-color:var(--amber);margin-top:3px}
         <p class="eyebrow">Notes</p>
         <h2>Portishead in a RIB</h2>
         <h3>The boat</h3>
-        <p>A Highfield Patrol 660: 6.5 m over charcoal tubes, 2.5 m beam, a 26° aluminium deep-V hull, a Honda BF150 (150 hp four-stroke, 2.14:1 gearbox, a 14.75 x 16 three-blade stainless propeller), a centre console with a seat ahead of it, four jockey seats in two pairs behind it, a rear bench and an A-frame over the engine. Her hull's resistance is worked back from Powerboat Magazine's test of a 660 (with a Suzuki 175: 38.4 kn at 5,950 rpm, on the plane from about 8 kn); with the Honda she makes about 34 kn at 5,870 rpm with the leg trimmed well, the rpm in the upper half of Honda's 5,000-6,000 band. Her mass (about 1,150 kg with two aboard) and the propeller's figures are estimates. In sway and yaw the hull is worked as strips along her length: at rest and at slow speed she sits by the stern, so most of her grip is aft in the deep V and the leg. Take the drive off in a turn and the stern stops sliding out, so the swing dies within a few seconds. The same grip means her bow blows off when she lies stopped in a breeze.</p>
+        <p>A Highfield Patrol 660: 6.5 m over charcoal tubes, 2.5 m beam, a 26° aluminium deep-V hull, a Honda BF150 (150 hp four-stroke, 2.14:1 gearbox, a 14.75 x 16 three-blade stainless propeller), a centre console with a seat ahead of it, four jockey seats in two pairs behind it, a rear bench and an A-frame over the engine. Her hull's resistance is worked back from Powerboat Magazine's test of a 660 (with a Suzuki 175: 38.4 kn at 5,950 rpm, on the plane from about 8 kn); with the Honda she makes about 34 kn at 5,870 rpm with the leg trimmed well, the rpm in the upper half of Honda's 5,000-6,000 band. Her mass (about 1,150 kg with two aboard) and the propeller's figures are estimates. In sway and yaw the hull is worked as strips along her length. Off the plane she sits by the stern and the V slides, so the leg's push swings the stern round briskly (hard over at tick-over she turns in about two of her lengths); on the plane the chines bite and she carves. Take the drive off in a turn and the swing dies within a few seconds. Lying stopped in a breeze, her bow blows off.</p>
         <h3>Keys</h3>
         <div class="keys">
           <kbd>X</kbd><span>Start or stop the engine (lever in neutral, kill cord on)</span>
@@ -334,6 +350,7 @@ fieldset input{accent-color:var(--amber);margin-top:3px}
         <h3>Outside</h3>
         <p>Leave the lock along the sea wall and the pier: a channel about 30 m wide is dredged from the approach along their face to beyond the pier head, drying 2.0 m (estimated), so there are three and a half metres even when the lock first opens. Outside it the outer harbour dries 4 to 10 m on the chart: stay in the channel, shown pecked on the chart. The pier head shows a green light (Iso G 2s). Off the pier the stream runs up and down the estuary: east-north-east on the flood, west-south-west on the ebb, at up to four or five knots at springs in the deep water and much less in Portishead Pool, where it eddies westward towards the pier head for most of the flood. Firefly Rocks lie north-east of the pier inside the Firefly buoy; keep close to the buoy. The rates are estimates, not tidal-stream atlas figures.</p>
         <p>Read the stream off the water. The Severn is brown with silt and the whole surface moves: lines of scum and patches of paler water slide past with it, boils well up where it runs hard over the bottom, and it gets rough over the shoals and where the wind blows against it. Each buoy leans and dips downstream, heaps a pillow of water against its upstream side and trails broken water away from it; the longer and whiter the trail, the harder the stream is running.</p>
+        <p>The waves you see are the waves she rides: a short swell up the channel and the wind's chop, less in the lee of the shore and the pier, very little in the walled approach, and dying away over the mud. From about force 3 the crests start to break, white on their falling face, leaving lace where they stood. Under Weather, Your own sets any force from 0 to 8 from any of sixteen points; the gusts, the swell and the visibility follow from it.</p>
         <h3>Drills</h3>
         <p><b>Come alongside a hammerhead</b>: an empty hammerhead at the end of one of the pontoon arms is outlined in green; let go, come round and lay her alongside it, stopped and parallel, then make fast. <b>Lock out and back in</b>: call the marina, lock out, round the pier head, call again, lock back in and return to your berth. <b>Man overboard</b>: get out into the estuary and above 4 kn; someone goes over the side and drifts with the stream. Turn back, keep them in sight, come up to them slowly into the stream and wind, neutral before they are near the prop, and stop with them alongside the console. O throws someone over at any time.</p>
         <h3>The tide</h3>

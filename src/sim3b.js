@@ -247,6 +247,16 @@ function buildRib() {
     for (const { mat, geos } of byKey.values()) { const m = new THREE.Mesh(mergeGeos(geos), mat); m.castShadow = m.receiveShadow = true; STAT.add(m); }
     for (const [o, rel] of keep) { rel.decompose(o.position, o.quaternion, o.scale); STAT.add(o); }
   }
+  // Short seas pass under her faster than she can follow, so a crest can stand above her deck for a moment. A lid across
+  // the cockpit at the height of the tubes' centres, drawn after her fittings and before the water and writing only
+  // depth, keeps the sea (and the wake and foam) from showing inside her.
+  {
+    const pos = [], zs = []; for (let z = 2.84; z > -2.7; z -= 0.08) zs.push(z); zs.push(-2.72);
+    const at = (z) => { const T = tubeAt(z); return [Math.max(0, T.x), T.y, z]; };
+    for (let i = 0; i < zs.length - 1; i++) { const a = at(zs[i]), b2 = at(zs[i + 1]); pos.push(-a[0], a[1], a[2], ...a, ...b2, -a[0], a[1], a[2], ...b2, -b2[0], b2[1], b2[2]); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const lid = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide })); lid.renderOrder = 0.5; body.add(lid);
+  }
   RIB.root = root; RIB.body = body;
   root.traverse(o => { if (o.isMesh) o.layers.enable(2); });
   if (RIB.screen) RIB.screen.layers.disable(2);
